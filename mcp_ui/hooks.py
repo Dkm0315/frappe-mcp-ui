@@ -11,15 +11,27 @@ app_license = "mit"
 # required_apps = []
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "mcp_ui",
-# 		"logo": "/assets/mcp_ui/logo.png",
-# 		"title": "Mcp Ui",
-# 		"route": "/mcp_ui",
-# 		"has_permission": "mcp_ui.api.permission.has_app_permission"
-# 	}
-# ]
+add_to_apps_screen = [
+	{
+		"name": "mcp_ui",
+		"logo": "/assets/mcp_ui/mcp/logo.svg",
+		"title": "MCP Tools",
+		"route": "/mcp",
+	}
+]
+
+# Website route rules
+website_route_rules = [
+	{
+		"from_route": "/mcp/<path:app_path>",
+		"to_route": "mcp",
+	},
+]
+
+# Installation
+# ------------------
+
+after_install = "mcp_ui.install.after_install"
 
 # Includes in <head>
 # ------------------
@@ -242,3 +254,6 @@ app_license = "mit"
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+website_route_rules = [
+	{"from_route": "/mcp/<path:app_path>", "to_route": "mcp"},
+]

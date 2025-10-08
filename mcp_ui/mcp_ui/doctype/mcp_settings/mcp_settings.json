@@ -1,0 +1,225 @@
+{
+ "actions": [],
+ "creation": "2025-01-08 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "system_status_section",
+  "nextai_installed",
+  "nextai_workflows_available",
+  "column_break_status",
+  "openai_key_source",
+  "ai_provider_status",
+  "ai_integration_section",
+  "enable_ai_nlp",
+  "ai_provider",
+  "openai_api_key",
+  "openai_model",
+  "column_break_ai",
+  "anthropic_api_key",
+  "anthropic_model",
+  "section_break_features",
+  "enable_bulk_operations",
+  "enable_keyboard_shortcuts",
+  "enable_voice_input",
+  "column_break_features",
+  "max_bulk_records",
+  "default_list_limit",
+  "section_break_ui",
+  "default_mode",
+  "enable_confetti",
+  "enable_animations",
+  "column_break_ui",
+  "theme",
+  "compact_mode"
+ ],
+ "fields": [
+  {
+   "fieldname": "system_status_section",
+   "fieldtype": "Section Break",
+   "label": "System Status"
+  },
+  {
+   "fieldname": "nextai_installed",
+   "fieldtype": "Data",
+   "label": "NextAI Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "nextai_workflows_available",
+   "fieldtype": "Data",
+   "label": "Available Workflows",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "openai_key_source",
+   "fieldtype": "Data",
+   "label": "OpenAI Key Source",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ai_provider_status",
+   "fieldtype": "Data",
+   "label": "AI Provider Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ai_integration_section",
+   "fieldtype": "Section Break",
+   "label": "AI Integration"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_ai_nlp",
+   "fieldtype": "Check",
+   "label": "Enable AI-Powered NLP"
+  },
+  {
+   "depends_on": "enable_ai_nlp",
+   "fieldname": "ai_provider",
+   "fieldtype": "Select",
+   "label": "AI Provider",
+   "options": "OpenAI\nAnthropic\nLocal"
+  },
+  {
+   "depends_on": "eval:doc.ai_provider=='OpenAI'",
+   "fieldname": "openai_api_key",
+   "fieldtype": "Password",
+   "label": "OpenAI API Key"
+  },
+  {
+   "default": "gpt-4o-mini",
+   "depends_on": "eval:doc.ai_provider=='OpenAI'",
+   "fieldname": "openai_model",
+   "fieldtype": "Select",
+   "label": "OpenAI Model",
+   "options": "gpt-4o\ngpt-4o-mini\no1-preview\no1-mini\ngpt-4-turbo"
+  },
+  {
+   "fieldname": "column_break_ai",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.ai_provider=='Anthropic'",
+   "fieldname": "anthropic_api_key",
+   "fieldtype": "Password",
+   "label": "Anthropic API Key"
+  },
+  {
+   "default": "claude-3-5-haiku-20241022",
+   "depends_on": "eval:doc.ai_provider=='Anthropic'",
+   "fieldname": "anthropic_model",
+   "fieldtype": "Select",
+   "label": "Anthropic Model",
+   "options": "claude-3-5-sonnet-20241022\nclaude-3-5-haiku-20241022\nclaude-3-opus-20240229\nclaude-3-sonnet-20240229\nclaude-3-haiku-20240307"
+  },
+  {
+   "fieldname": "section_break_features",
+   "fieldtype": "Section Break",
+   "label": "Features"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_bulk_operations",
+   "fieldtype": "Check",
+   "label": "Enable Bulk Operations"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_keyboard_shortcuts",
+   "fieldtype": "Check",
+   "label": "Enable Keyboard Shortcuts"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_voice_input",
+   "fieldtype": "Check",
+   "label": "Enable Voice Input"
+  },
+  {
+   "fieldname": "column_break_features",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "100",
+   "fieldname": "max_bulk_records",
+   "fieldtype": "Int",
+   "label": "Max Bulk Records"
+  },
+  {
+   "default": "20",
+   "fieldname": "default_list_limit",
+   "fieldtype": "Int",
+   "label": "Default List Limit"
+  },
+  {
+   "fieldname": "section_break_ui",
+   "fieldtype": "Section Break",
+   "label": "UI Preferences"
+  },
+  {
+   "default": "simple",
+   "fieldname": "default_mode",
+   "fieldtype": "Select",
+   "label": "Default Mode",
+   "options": "simple\nadvanced\nworkflows"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_confetti",
+   "fieldtype": "Check",
+   "label": "Enable Confetti Animations"
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_animations",
+   "fieldtype": "Check",
+   "label": "Enable Animations"
+  },
+  {
+   "fieldname": "column_break_ui",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "system",
+   "fieldname": "theme",
+   "fieldtype": "Select",
+   "label": "Default Theme",
+   "options": "light\ndark\nsystem"
+  },
+  {
+   "default": "0",
+   "fieldname": "compact_mode",
+   "fieldtype": "Check",
+   "label": "Compact Mode"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-01-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mcp Ui",
+ "name": "MCP Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
+

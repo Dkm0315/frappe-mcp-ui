@@ -1,0 +1,2 @@
+# MCP Usage Log DocType
+

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Tools</title>
+    <link rel="icon" href="/assets/mcp_ui/mcp/logo.svg">
+</head>
+<body>
+    <div id="root"></div>
+    <script>
+        window.boot_data = {{ boot | tojson }};
+        window.frappe = window.frappe || {};
+        window.frappe.csrf_token = "{{ boot.csrf_token }}";
+        window.csrf_token = "{{ boot.csrf_token }}";
+    </script>
+    <script type="module" src="/assets/mcp_ui/mcp/index.js"></script>
+    <link rel="stylesheet" href="/assets/mcp_ui/mcp/index.css">
+</body>
+</html>
+
