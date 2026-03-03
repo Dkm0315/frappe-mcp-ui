@@ -286,6 +286,118 @@ class FrappeAPI {
       filters: JSON.stringify(filters),
     });
   }
+
+  // ===== IDE APIs =====
+
+  async getCapabilities() {
+    return this.call('mcp_ui.api.ide.get_capabilities');
+  }
+
+  // Client Scripts
+  async getClientScripts(doctype?: string) {
+    return this.call('mcp_ui.api.ide.get_client_scripts', { doctype });
+  }
+
+  async getClientScript(name: string) {
+    return this.call('mcp_ui.api.ide.get_client_script', { name });
+  }
+
+  async saveClientScript(data: {
+    name?: string; dt?: string; view?: string;
+    enabled?: number; script?: string; module?: string;
+  }) {
+    return this.call('mcp_ui.api.ide.save_client_script', data);
+  }
+
+  async deleteClientScript(name: string) {
+    return this.call('mcp_ui.api.ide.delete_client_script', { name });
+  }
+
+  // Server Scripts
+  async getServerScripts(doctype?: string, scriptType?: string) {
+    return this.call('mcp_ui.api.ide.get_server_scripts', {
+      doctype, script_type: scriptType,
+    });
+  }
+
+  async getServerScript(name: string) {
+    return this.call('mcp_ui.api.ide.get_server_script', { name });
+  }
+
+  async saveServerScript(data: {
+    name?: string; script_type?: string; reference_doctype?: string;
+    doctype_event?: string; api_method?: string; script?: string;
+    disabled?: number; event_frequency?: string; cron_format?: string;
+    allow_guest?: number; module?: string;
+  }) {
+    return this.call('mcp_ui.api.ide.save_server_script', data);
+  }
+
+  async deleteServerScript(name: string) {
+    return this.call('mcp_ui.api.ide.delete_server_script', { name });
+  }
+
+  // Workflows
+  async getFrappeWorkflows() {
+    return this.call('mcp_ui.api.ide.get_frappe_workflows');
+  }
+
+  async saveFrappeWorkflow(data: {
+    workflow_name: string; document_type: string; is_active?: number;
+    states?: any[]; transitions?: any[];
+  }) {
+    return this.call('mcp_ui.api.ide.save_workflow', {
+      ...data,
+      states: data.states ? JSON.stringify(data.states) : undefined,
+      transitions: data.transitions ? JSON.stringify(data.transitions) : undefined,
+    });
+  }
+
+  async deleteWorkflow(name: string) {
+    return this.call('mcp_ui.api.ide.delete_workflow', { name });
+  }
+
+  // Schema Management
+  async getCustomFieldsForDoctype(doctype: string) {
+    return this.call('mcp_ui.api.ide.get_custom_fields_for_doctype', { doctype });
+  }
+
+  async addCustomField(data: {
+    dt: string; label: string; fieldtype: string;
+    options?: string; insert_after?: string; reqd?: number;
+    hidden?: number; default?: string; description?: string;
+  }) {
+    return this.call('mcp_ui.api.ide.add_custom_field', data);
+  }
+
+  async deleteCustomField(name: string) {
+    return this.call('mcp_ui.api.ide.delete_custom_field', { name });
+  }
+
+  async getPropertySetters(doctype: string) {
+    return this.call('mcp_ui.api.ide.get_property_setters', { doctype });
+  }
+
+  async setProperty(data: {
+    doc_type: string; field_name: string; property: string;
+    value: string; property_type?: string;
+  }) {
+    return this.call('mcp_ui.api.ide.set_property', data);
+  }
+
+  // Notifications
+  async getNotificationRules() {
+    return this.call('mcp_ui.api.ide.get_notifications');
+  }
+
+  async getNotificationRule(name: string) {
+    return this.call('mcp_ui.api.ide.get_notification', { name });
+  }
+
+  // Hooks Discovery
+  async getDocEvents() {
+    return this.call('mcp_ui.api.ide.get_doc_events');
+  }
 }
 
 // Export singleton instance

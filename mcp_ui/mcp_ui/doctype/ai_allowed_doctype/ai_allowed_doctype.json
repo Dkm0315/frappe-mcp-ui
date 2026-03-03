@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "creation": "2025-01-08 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "doctype_name",
+  "allow_read",
+  "allow_create",
+  "allow_update",
+  "allow_delete"
+ ],
+ "fields": [
+  {
+   "fieldname": "doctype_name",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "allow_read",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Read"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_create",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Create"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_update",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Update"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_delete",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Delete"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2025-01-08 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mcp Ui",
+ "name": "AI Allowed DocType",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

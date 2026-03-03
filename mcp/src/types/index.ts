@@ -104,7 +104,7 @@ export interface JSONSchema {
   description?: string;
 }
 
-export type UIMode = 'simple' | 'advanced' | 'workflows';
+export type UIMode = 'admin' | 'developer' | 'assistant';
 
 export interface FormField {
   fieldname: string;
