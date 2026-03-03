@@ -160,23 +160,11 @@ after_install = "mcp_ui.install.after_install"
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"mcp_ui.tasks.all"
-# 	],
-# 	"daily": [
-# 		"mcp_ui.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"mcp_ui.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"mcp_ui.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"mcp_ui.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"all": [
+		"mcp_ui.openclaw.manager.ensure_gateway_running",
+	],
+}
 
 # Testing
 # -------

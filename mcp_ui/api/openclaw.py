@@ -320,6 +320,63 @@ Installed apps: {installed_apps}
 	}
 
 
+@frappe.whitelist()
+def start_gateway():
+	"""Start the OpenClaw gateway process."""
+	from mcp_ui.openclaw.manager import start_gateway as _start
+	pid = _start()
+	if pid:
+		return {"success": True, "pid": pid}
+	return {"success": False, "error": "Failed to start gateway. Check logs."}
+
+
+@frappe.whitelist()
+def stop_gateway():
+	"""Stop the OpenClaw gateway process."""
+	from mcp_ui.openclaw.manager import stop_gateway as _stop
+	stopped = _stop()
+	return {"success": stopped}
+
+
+@frappe.whitelist()
+def gateway_status():
+	"""Get the current gateway status."""
+	from mcp_ui.openclaw.manager import get_status
+	return get_status()
+
+
+@frappe.whitelist()
+def setup_openclaw():
+	"""One-click setup: install npm packages, generate config, generate SOUL.md, start gateway."""
+	from mcp_ui.openclaw.manager import install_openclaw, start_gateway as _start, get_status
+
+	steps = []
+
+	# Step 1: Install npm packages
+	result = install_openclaw()
+	steps.append({"step": "Install OpenClaw", "success": result.get("success"), "detail": result.get("error", "OK")})
+	if not result.get("success"):
+		return {"success": False, "steps": steps, "error": "npm install failed"}
+
+	# Step 2: Generate config
+	try:
+		cfg = generate_config()
+		steps.append({"step": "Generate Config", "success": True, "detail": cfg.get("config_path", "OK")})
+	except Exception as e:
+		steps.append({"step": "Generate Config", "success": False, "detail": str(e)})
+		return {"success": False, "steps": steps, "error": str(e)}
+
+	# Step 3: Start gateway
+	pid = _start()
+	steps.append({"step": "Start Gateway", "success": bool(pid), "detail": f"PID {pid}" if pid else "Failed"})
+
+	return {
+		"success": bool(pid),
+		"steps": steps,
+		"status": get_status(),
+	}
+
+
 def _get_openclaw_model(settings, provider_config) -> str:
 	"""Convert MCP Settings provider config to OpenClaw model string."""
 	provider = settings.ai_provider or "OpenAI"
