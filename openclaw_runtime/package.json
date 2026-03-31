@@ -1,0 +1,8 @@
+{
+  "name": "mcp-ui-openclaw-runtime",
+  "private": true,
+  "dependencies": {
+    "openclaw": "latest",
+    "openclaw-mcp-adapter": "latest"
+  }
+}
