@@ -412,26 +412,23 @@ def create_server(frappe_module) -> Server:
 	server = Server("frappe-mcp")
 
 	# Import the tool functions
-	from mcp_ui.ai.tools import get_tool_schemas, get_tool_map
+	from mcp_ui.intent_layer.tools import TOOL_REGISTRY, get_tool_schema
 
-	tool_map = get_tool_map()
-	tool_schemas = get_tool_schemas()
-
-	# No extra tools — all 29 tools are now in ai/tools.py
-	extra_tools = []
+	tool_map = TOOL_REGISTRY
+	tool_schemas = _build_intent_tool_schemas(get_tool_schema())
 
 	@server.list_tools()
 	async def list_tools() -> list[Tool]:
 		"""List all available tools."""
 		tools = []
-		for ts in tool_schemas:
-			fn = ts["function"]
-			tools.append(Tool(
-				name=fn["name"],
-				description=fn["description"],
-				inputSchema=fn["parameters"],
-			))
-		tools.extend(extra_tools)
+		for tool_name, schema in tool_schemas.items():
+			tools.append(
+				Tool(
+					name=tool_name,
+					description=schema.get("description") or f"Execute deterministic Frappe tool {tool_name}.",
+					inputSchema=schema.get("parameters") or {"type": "object", "properties": {}},
+				)
+			)
 		return tools
 
 	@server.call_tool()
@@ -460,6 +457,59 @@ def create_server(frappe_module) -> Server:
 			return [TextContent(type="text", text=json.dumps({"error": f"Tool execution failed: {str(e)}"}))]
 
 	return server
+
+
+def _build_intent_tool_schemas(schema_map: dict[str, dict]) -> dict[str, dict]:
+	"""Build MCP-compatible JSON schemas for the intent-layer tool registry."""
+	property_templates = {
+		"doctype": {"type": "string"},
+		"name": {"type": "string"},
+		"data": {"type": "object", "additionalProperties": True},
+		"filters": {"type": "object", "additionalProperties": True},
+		"query": {"type": "string"},
+		"limit": {"type": "integer"},
+		"user_id": {"type": "string"},
+		"fields": {"type": "array", "items": {"type": "string"}},
+		"confirm": {"type": "boolean"},
+		"action": {"type": "string"},
+		"method": {"type": "string"},
+		"params": {"type": "object", "additionalProperties": True},
+	}
+	descriptions = {
+		"create_doc": "Create a Frappe document after planner and constraint validation.",
+		"get_doc": "Load one Frappe document the user can read.",
+		"update_doc": "Update one Frappe document using Frappe ORM.",
+		"delete_doc": "Delete one Frappe document only when confirm=true.",
+		"search_docs": "Search readable documents by free-text fields and filters.",
+		"list_docs": "List readable documents with filters and selected fields.",
+		"get_schema": "Fetch DocType field and workflow schema.",
+		"list_doctypes": "List readable DocTypes for the current user.",
+		"validate_doc": "Validate required fields and Link integrity without mutating data.",
+		"submit_doc": "Submit one submittable Frappe document.",
+		"apply_workflow": "Apply one legal Frappe workflow transition.",
+		"get_recent_docs": "List recent documents for context resolution.",
+		"call_custom_api": "Invoke one whitelisted custom API with filtered parameters.",
+	}
+	tool_schemas: dict[str, dict] = {}
+	for tool_name, schema in (schema_map or {}).items():
+		required = list(schema.get("required") or [])
+		properties = {
+			field_name: property_templates.get(field_name, {"type": "string"})
+			for field_name in required
+		}
+		for optional_name in ("filters", "query", "limit", "user_id", "fields", "confirm", "action", "params"):
+			if optional_name not in properties:
+				properties[optional_name] = property_templates.get(optional_name, {"type": "string"})
+		tool_schemas[tool_name] = {
+			"description": descriptions.get(tool_name, f"Execute {tool_name}."),
+			"parameters": {
+				"type": "object",
+				"properties": properties,
+				"required": required,
+				"additionalProperties": False,
+			},
+		}
+	return tool_schemas
 
 
 async def run():

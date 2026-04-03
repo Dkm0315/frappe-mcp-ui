@@ -18,6 +18,18 @@
   "column_break_ai",
   "anthropic_api_key",
   "anthropic_model",
+  "intent_layer_section",
+  "intent_layer_enabled",
+  "intent_layer_vector_backend",
+  "intent_layer_last_refresh",
+  "intent_layer_schema_checksum",
+  "column_break_intent_layer",
+  "intent_layer_registry_path",
+  "intent_layer_customization_path",
+  "intent_layer_faiss_path",
+  "intent_layer_faiss_map_path",
+  "intent_layer_customization_checksum",
+  "intent_layer_customization_refresh",
   "section_break_features",
   "enable_bulk_operations",
   "enable_keyboard_shortcuts",
@@ -116,6 +128,78 @@
    "fieldtype": "Select",
    "label": "Anthropic Model",
    "options": "claude-3-5-sonnet-20241022\nclaude-3-5-haiku-20241022\nclaude-3-opus-20240229\nclaude-3-sonnet-20240229\nclaude-3-haiku-20240307"
+  },
+  {
+   "fieldname": "intent_layer_section",
+   "fieldtype": "Section Break",
+   "label": "Intent Layer",
+   "description": "Schema and customization scan metadata used by the Intelligent Intent Layer."
+  },
+  {
+   "default": "1",
+   "fieldname": "intent_layer_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Intent Layer"
+  },
+  {
+   "default": "Lexical Fallback",
+   "fieldname": "intent_layer_vector_backend",
+   "fieldtype": "Select",
+   "label": "Vector Backend",
+   "options": "FAISS Local\nLexical Fallback",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_last_refresh",
+   "fieldtype": "Data",
+   "label": "Last Schema Refresh",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_schema_checksum",
+   "fieldtype": "Data",
+   "label": "Schema Checksum",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_intent_layer",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "intent_layer_registry_path",
+   "fieldtype": "Data",
+   "label": "Semantic Registry Path",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_customization_path",
+   "fieldtype": "Data",
+   "label": "Customization Registry Path",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_faiss_path",
+   "fieldtype": "Data",
+   "label": "FAISS Index Path",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_faiss_map_path",
+   "fieldtype": "Data",
+   "label": "FAISS Map Path",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_customization_checksum",
+   "fieldtype": "Data",
+   "label": "Customization Checksum",
+   "read_only": 1
+  },
+  {
+   "fieldname": "intent_layer_customization_refresh",
+   "fieldtype": "Data",
+   "label": "Customization Refresh",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_features",
@@ -222,4 +306,3 @@
  "sort_order": "DESC",
  "states": []
 }
-

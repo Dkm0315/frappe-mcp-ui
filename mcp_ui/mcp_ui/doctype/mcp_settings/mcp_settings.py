@@ -6,6 +6,16 @@ from frappe.model.document import Document
 
 
 class MCPSettings(Document):
+	def validate(self):
+		"""Validate stored OpenClaw config JSON when manually edited from Settings."""
+		config_json = (self.get("openclaw_config_json") or "").strip()
+		if not config_json:
+			return
+		try:
+			frappe.parse_json(config_json)
+		except Exception:
+			frappe.throw("OpenClaw Config JSON must be valid JSON.")
+
 	def before_load(self):
 		"""Populate system status fields before loading"""
 		from mcp_ui.utils.app_checker import (
@@ -46,4 +56,3 @@ class MCPSettings(Document):
 			self.ai_provider_status = f"✓ {provider} Configured"
 		else:
 			self.ai_provider_status = "✗ Not Configured"
-

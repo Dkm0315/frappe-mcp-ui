@@ -5,3 +5,5 @@
 tags
 node_modules
 __pycache__
+openclaw_runtime/.venv/
+openclaw_runtime/package-lock.json

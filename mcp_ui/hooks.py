@@ -32,6 +32,7 @@ website_route_rules = [
 # ------------------
 
 after_install = "mcp_ui.install.after_install"
+after_migrate = ["mcp_ui.intent_layer.api.refresh_schema"]
 
 # Includes in <head>
 # ------------------

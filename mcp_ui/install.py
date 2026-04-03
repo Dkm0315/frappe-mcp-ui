@@ -25,5 +25,13 @@ def after_install():
 	except Exception as e:
 		frappe.logger().warning(f"OpenClaw install skipped: {e}")
 
-	frappe.logger().info("MCP UI app installed successfully!")
+	# Initialize the intent-layer schema and customization registry.
+	try:
+		from mcp_ui.intent_layer.api import refresh_schema
 
+		refresh_schema()
+		frappe.logger("intent_layer").info("Intent Layer registry initialized successfully")
+	except Exception as e:
+		frappe.logger("intent_layer").warning(f"Intent Layer schema refresh skipped: {e}")
+
+	frappe.logger().info("MCP UI app installed successfully!")

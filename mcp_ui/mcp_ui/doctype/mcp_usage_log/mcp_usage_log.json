@@ -6,9 +6,13 @@
  "engine": "InnoDB",
  "field_order": [
   "user",
+  "request_id",
+  "stage_name",
   "tool_name",
   "credits_consumed",
   "status",
+  "retry_count",
+  "error_type",
   "section_break_params",
   "input_params",
   "output",
@@ -23,6 +27,18 @@
    "label": "User",
    "options": "User",
    "reqd": 1
+  },
+  {
+   "fieldname": "request_id",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Request ID"
+  },
+  {
+   "fieldname": "stage_name",
+   "fieldtype": "Data",
+   "in_standard_filter": 1,
+   "label": "Stage Name"
   },
   {
    "fieldname": "tool_name",
@@ -49,6 +65,17 @@
    "label": "Status",
    "options": "Success\nFailed\nPartial",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "retry_count",
+   "fieldtype": "Int",
+   "label": "Retry Count"
+  },
+  {
+   "fieldname": "error_type",
+   "fieldtype": "Data",
+   "label": "Error Type"
   },
   {
    "fieldname": "section_break_params",
@@ -108,4 +135,3 @@
  "states": [],
  "track_changes": 1
 }
-

@@ -2,6 +2,7 @@
 OpenClaw Configuration API
 Generates openclaw.json, manages Telegram user mappings, health checks.
 """
+import hashlib
 import json
 import os
 
@@ -24,15 +25,27 @@ def generate_config():
 	provider_config = get_provider_config()
 
 	bench_path = frappe.utils.get_bench_path()
-	python_path = os.path.join(bench_path, "env", "bin", "python")
+	python_path = os.path.join(
+		bench_path,
+		"apps",
+		"mcp_ui",
+		"openclaw_runtime",
+		".venv",
+		"bin",
+		"python",
+	)
+	if not os.path.exists(python_path):
+		python_path = os.path.join(bench_path, "env", "bin", "python")
 	site = frappe.local.site
 
 	# Build model string for OpenClaw
 	model = _get_openclaw_model(settings, provider_config)
 	provider = settings.ai_provider or "OpenAI"
+	telegram_token = settings.get("telegram_bot_token")
 
 	# Build the config — only keys OpenClaw actually accepts
-	config = {
+	config = _merge_openclaw_config(
+		{
 		"agents": {
 			"defaults": {
 				"model": model,
@@ -76,20 +89,19 @@ def generate_config():
 				},
 			},
 		},
-	}
-
-	# Add Telegram channel if configured
-	telegram_token = settings.get("telegram_bot_token")
-	if telegram_token:
-		config["channels"]["telegram"] = {
-			"enabled": True,
-			"botToken": telegram_token,
-			"dmPolicy": "open",
-			"allowFrom": ["*"],
-			"groupPolicy": "allowlist",
-			"textChunkLimit": 4000,
-			"streaming": "partial",
-		}
+		},
+		frappe.parse_json(settings.get("openclaw_config_json") or "{}")
+		if (settings.get("openclaw_config_json") or "").strip()
+		else {},
+	)
+	config = _normalize_runtime_config(
+		config=config,
+		bench_path=bench_path,
+		python_path=python_path,
+		site=site,
+		telegram_token=telegram_token,
+		fallback_token=config.get("gateway", {}).get("auth", {}).get("token") or secrets.token_hex(24),
+	)
 
 	# Save to ~/.openclaw/openclaw.json (where OpenClaw actually reads it)
 	openclaw_dir = os.path.expanduser("~/.openclaw")
@@ -97,6 +109,16 @@ def generate_config():
 	config_path = os.path.join(openclaw_dir, "openclaw.json")
 	with open(config_path, "w") as f:
 		json.dump(config, f, indent=2)
+
+	settings.openclaw_config_json = json.dumps(config, indent=2, sort_keys=True)
+	settings.openclaw_config_path = config_path
+	settings.openclaw_config_checksum = hashlib.sha256(
+		settings.openclaw_config_json.encode("utf-8")
+	).hexdigest()
+	settings.openclaw_config_synced_at = str(frappe.utils.now_datetime())
+	settings.openclaw_status = "Config Generated"
+	settings.save(ignore_permissions=True)
+	frappe.db.commit()
 
 	# Also generate SOUL.md dynamically from the live Frappe system
 	soul_result = generate_soul_md()
@@ -140,9 +162,8 @@ def generate_config():
 def test_mcp_server():
 	"""Test that the MCP server can initialize and list tools."""
 	try:
-		from mcp_ui.ai.tools import get_tool_schemas
-		schemas = get_tool_schemas()
-		tool_names = [s["function"]["name"] for s in schemas]
+		from mcp_ui.intent_layer.tools import TOOL_REGISTRY
+		tool_names = sorted(TOOL_REGISTRY)
 		return {
 			"success": True,
 			"tool_count": len(tool_names),
@@ -205,8 +226,8 @@ def get_openclaw_status():
 
 	# Check if MCP server tools load
 	try:
-		from mcp_ui.ai.tools import get_tool_schemas
-		tool_count = len(get_tool_schemas())
+		from mcp_ui.intent_layer.tools import TOOL_REGISTRY
+		tool_count = len(TOOL_REGISTRY)
 	except Exception as e:
 		tool_count = 0
 		issues.append(f"MCP tools failed to load: {str(e)}")
@@ -293,11 +314,11 @@ DOCTYPES IN THIS SYSTEM (use these EXACT names):
 {dt_ref}
 
 RULES:
-1. User asks to see data → call frappe_get_list immediately with correct DocType name from above
-2. User asks to create something → call frappe_create_document immediately
-3. If you get a "DocType not found" error → call frappe_get_module_context to discover the right name
-4. If you get "Unknown column" error → call frappe_get_doctype_meta to discover field names, then retry
-5. NEVER guess field names. Use frappe_get_doctype_meta to look them up first.
+1. User asks to see data → call frappe_list_docs or frappe_search_docs with the correct DocType name from above
+2. User asks to create something → call frappe_create_doc only after required data is known
+3. If you need field names or workflow metadata → call frappe_get_schema
+4. If a request is ambiguous across DocTypes → ask a short clarification question instead of guessing
+5. NEVER guess field names. Use frappe_get_schema to look them up first.
 6. Keep Telegram responses short with bullet points and bold
 7. Never reveal salary, passwords, API keys, or bank details
 
@@ -403,3 +424,86 @@ def _get_env_key_name(provider: str) -> str:
 		"Google": "GEMINI_API_KEY",
 	}
 	return mapping.get(provider, "")
+
+
+def _merge_openclaw_config(base_config: dict, override_config: dict) -> dict:
+	"""Deep-merge user-edited config JSON over generated defaults."""
+	if not isinstance(override_config, dict):
+		return base_config
+	merged = dict(base_config or {})
+	for key, value in override_config.items():
+		if isinstance(value, dict) and isinstance(merged.get(key), dict):
+			merged[key] = _merge_openclaw_config(merged[key], value)
+		else:
+			merged[key] = value
+	return merged
+
+
+def _normalize_runtime_config(
+	config: dict,
+	bench_path: str,
+	python_path: str,
+	site: str,
+	telegram_token: str,
+	fallback_token: str,
+) -> dict:
+	"""Enforce bench/site runtime bindings while preserving user-edited channel settings."""
+	config = dict(config or {})
+	config.setdefault("agents", {}).setdefault("defaults", {})
+	config.setdefault("commands", {})
+	config.setdefault("channels", {})
+	config.setdefault("gateway", {}).setdefault("auth", {})
+	config.setdefault("plugins", {}).setdefault("entries", {})
+
+	gateway = config["gateway"]
+	gateway["mode"] = gateway.get("mode") or "local"
+	gateway.setdefault("auth", {})
+	gateway["auth"]["mode"] = gateway["auth"].get("mode") or "token"
+	gateway["auth"]["token"] = gateway["auth"].get("token") or fallback_token
+
+	adapter_entry = config["plugins"]["entries"].setdefault(
+		"openclaw-mcp-adapter",
+		{"enabled": True, "config": {}},
+	)
+	adapter_entry["enabled"] = True
+	adapter_cfg = adapter_entry.setdefault("config", {})
+	adapter_cfg["toolPrefix"] = True
+	servers = adapter_cfg.setdefault("servers", [])
+	frappe_server = {}
+	for server in servers:
+		if server.get("name") == "frappe":
+			frappe_server = server
+			break
+	if not frappe_server:
+		frappe_server = {"name": "frappe"}
+		servers.append(frappe_server)
+	frappe_server.update(
+		{
+			"name": "frappe",
+			"transport": "stdio",
+			"command": python_path,
+			"args": ["-m", "mcp_ui.openclaw"],
+			"env": {
+				**dict(frappe_server.get("env") or {}),
+				"FRAPPE_SITE": site,
+				"FRAPPE_BENCH": bench_path,
+				"FRAPPE_USER": frappe.session.user,
+			},
+		}
+	)
+
+	if telegram_token:
+		telegram_cfg = dict(config["channels"].get("telegram") or {})
+		telegram_cfg.update(
+			{
+				"enabled": telegram_cfg.get("enabled", True),
+				"botToken": telegram_token,
+				"dmPolicy": telegram_cfg.get("dmPolicy") or "open",
+				"allowFrom": telegram_cfg.get("allowFrom") or ["*"],
+				"groupPolicy": telegram_cfg.get("groupPolicy") or "allowlist",
+				"textChunkLimit": telegram_cfg.get("textChunkLimit") or 4000,
+				"streaming": telegram_cfg.get("streaming") or "partial",
+			}
+		)
+		config["channels"]["telegram"] = telegram_cfg
+	return config
