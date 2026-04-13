@@ -55,7 +55,9 @@ after_install = "mcp_ui.install.after_install"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"MCP Settings": "public/js/mcp_settings.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -164,7 +166,45 @@ scheduler_events = {
 	"all": [
 		"mcp_ui.openclaw.manager.ensure_gateway_running",
 	],
+	"hourly": [
+		"mcp_ui.openclaw.site_context.scheduled_refresh_context",
+	],
 }
+
+doc_events = {
+	"Custom Field": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+	"Property Setter": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+	"Workflow": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+	"Client Script": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+	"Server Script": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+	"Funnel": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+	"Funnel Published": {
+		"on_update": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+		"on_trash": "mcp_ui.openclaw.site_context.mark_manifest_stale",
+	},
+}
+
+after_migrate = [
+	"mcp_ui.openclaw.site_context.scheduled_refresh_context",
+]
 
 # Testing
 # -------

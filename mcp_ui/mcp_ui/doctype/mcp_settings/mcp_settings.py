@@ -14,6 +14,7 @@ class MCPSettings(Document):
 			get_openai_api_key,
 			get_ai_provider
 		)
+		from mcp_ui.openclaw.runtime import get_runtime_paths, read_json
 		
 		# Check NextAI status
 		if is_nextai_installed():
@@ -47,3 +48,20 @@ class MCPSettings(Document):
 		else:
 			self.ai_provider_status = "✗ Not Configured"
 
+		try:
+			paths = get_runtime_paths()
+			state = read_json(paths["state_file"], {}) or {}
+			self.openclaw_runtime_root = paths["root"]
+			self.openclaw_config_path = paths["config_file"]
+			if self.get("browser_enabled"):
+				profile = self.get("browser_default_profile") or "openclaw"
+				mode = "headless" if self.get("browser_headless") else "headed"
+				self.browser_status = f"Enabled ({profile}, {mode})"
+			else:
+				self.browser_status = "Disabled"
+			self.openclaw_manifest_hash = frappe.db.get_single_value("MCP Settings", "openclaw_manifest_hash") or ""
+			self.openclaw_last_manifest_refresh = frappe.db.get_single_value("MCP Settings", "openclaw_last_manifest_refresh")
+			self.openclaw_last_gateway_start = state.get("last_started_at") or frappe.db.get_single_value("MCP Settings", "openclaw_last_gateway_start")
+			self.openclaw_last_gateway_error = state.get("error") or frappe.db.get_single_value("MCP Settings", "openclaw_last_gateway_error")
+		except Exception:
+			pass

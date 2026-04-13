@@ -216,7 +216,9 @@ def execute_report(report_name: str, filters: dict = None) -> dict:
 	report = frappe.get_doc("Report", report_name)
 	filters = filters or {}
 
-	result = frappe.desk.query_report.run(report_name, filters)
+	from frappe.desk.query_report import run as run_query_report
+
+	result = run_query_report(report_name, filters)
 
 	return {"success": True, "columns": result.get("columns", []), "data": result.get("result", [])}
 
@@ -331,4 +333,3 @@ def get_dashboard_data(doctype: str) -> dict:
 		"status_breakdown": status_count,
 		"recent_records": recent,
 	}
-

@@ -1,286 +1,66 @@
 """
-MCP Tools API
-Provides endpoints for tool discovery and execution
+Unified action discovery and execution API for MCP UI and OpenClaw.
 """
+from __future__ import annotations
+
 import json
 
 import frappe
 
+from mcp_ui.openclaw.actions import execute_action, get_action_catalog
+from mcp_ui.openclaw.federation import execute_as_mapped_user
+
 
 @frappe.whitelist()
 def get_available_tools():
-	"""
-	Get list of all available MCP tools with their metadata
-	"""
-	# Import to ensure tools are registered
-	from mcp_ui.mcp_server import mcp
-
-	# Get registered tools from MCP instance
-	tools = []
-
-	# Core tools metadata
-	core_tools_meta = [
-		{
-			"name": "create_document",
-			"title": "Create Document",
-			"description": "Create a new document in Frappe",
-			"category": "CRUD",
-			"base_cost": 3,
-			"destructive": False,
-			"read_only": False,
-		},
-		{
-			"name": "update_document",
-			"title": "Update Document",
-			"description": "Update an existing document",
-			"category": "CRUD",
-			"base_cost": 2,
-			"destructive": False,
-			"read_only": False,
-		},
-		{
-			"name": "delete_document",
-			"title": "Delete Document",
-			"description": "Delete a document from Frappe",
-			"category": "CRUD",
-			"base_cost": 2,
-			"destructive": True,
-			"read_only": False,
-		},
-		{
-			"name": "get_document",
-			"title": "Get Document",
-			"description": "Fetch a single document",
-			"category": "CRUD",
-			"base_cost": 1,
-			"destructive": False,
-			"read_only": True,
-		},
-		{
-			"name": "get_list",
-			"title": "Get List",
-			"description": "Get a list of documents with filters",
-			"category": "Query",
-			"base_cost": 1,
-			"destructive": False,
-			"read_only": True,
-		},
-		{
-			"name": "search_documents",
-			"title": "Search Documents",
-			"description": "Search documents by text",
-			"category": "Query",
-			"base_cost": 2,
-			"destructive": False,
-			"read_only": True,
-		},
-		{
-			"name": "execute_report",
-			"title": "Execute Report",
-			"description": "Run a Frappe report",
-			"category": "Reports",
-			"base_cost": 5,
-			"destructive": False,
-			"read_only": True,
-		},
-		{
-			"name": "bulk_update",
-			"title": "Bulk Update",
-			"description": "Update multiple documents at once",
-			"category": "Bulk",
-			"base_cost": 10,
-			"destructive": False,
-			"read_only": False,
-		},
-		{
-			"name": "export_data",
-			"title": "Export Data",
-			"description": "Export data in JSON format",
-			"category": "Export",
-			"base_cost": 5,
-			"destructive": False,
-			"read_only": True,
-		},
-		{
-			"name": "get_dashboard_data",
-			"title": "Get Dashboard Data",
-			"description": "Get dashboard statistics",
-			"category": "Analytics",
-			"base_cost": 2,
-			"destructive": False,
-			"read_only": True,
-		},
-	]
-
-	return {"success": True, "tools": core_tools_meta, "count": len(core_tools_meta)}
+	actions = get_action_catalog()
+	return {"success": True, "tools": actions, "count": len(actions)}
 
 
 @frappe.whitelist()
-def execute_tool(tool_name, params):
-	"""
-	Execute an MCP tool with credit tracking
-
-	Args:
-		tool_name: Name of the tool to execute
-		params: Tool parameters as JSON string or dict
-
-	Returns:
-		Tool execution result
-	"""
-	# Parse params if string
+def execute_tool(tool_name, params=None, session_context=None, validate_only: int = 0):
 	if isinstance(params, str):
-		try:
-			params = json.loads(params)
-		except json.JSONDecodeError:
-			frappe.throw("Invalid parameters format")
+		params = json.loads(params)
+	if isinstance(session_context, str):
+		session_context = json.loads(session_context)
 
-	# Import tool functions
-	from mcp_ui.mcp_server import core_tools
+	params = params or {}
+	session_context = session_context or {}
 
-	# Map tool names to functions
-	tool_functions = {
-		"create_document": core_tools.create_document,
-		"update_document": core_tools.update_document,
-		"delete_document": core_tools.delete_document,
-		"get_document": core_tools.get_document,
-		"get_list": core_tools.get_list,
-		"search_documents": core_tools.search_documents,
-		"execute_report": core_tools.execute_report,
-		"bulk_update": core_tools.bulk_update,
-		"export_data": core_tools.export_data,
-		"get_dashboard_data": core_tools.get_dashboard_data,
-	}
-
-	# Get tool function
-	tool_func = tool_functions.get(tool_name)
-
-	if not tool_func:
-		frappe.throw(f"Tool '{tool_name}' not found")
-
-	# Execute tool
 	try:
-		result = tool_func(**params)
+		if session_context:
+			result = execute_as_mapped_user(
+				session_context=session_context,
+				action=tool_name,
+				args=params,
+				validate_only=bool(int(validate_only)),
+			)
+			return {"success": result.get("success"), "result": result, "tool": tool_name}
 
-		# Log successful execution
-		from mcp_ui.api.credits import get_balance
-
-		balance = get_balance()
-
-		return {
-			"success": True,
-			"result": result,
-			"tool": tool_name,
-			"remaining_credits": balance.get("balance", 0),
-		}
-
-	except Exception as e:
-		frappe.log_error(f"Tool execution failed: {tool_name}", str(e))
-		frappe.throw(f"Tool execution failed: {str(e)}")
+		result = execute_action(tool_name, params)
+		return {"success": True, "result": result, "tool": tool_name}
+	except Exception as exc:
+		frappe.log_error(frappe.get_traceback(), "Tool execution failed")
+		frappe.throw(f"Tool execution failed: {str(exc)}")
 
 
 @frappe.whitelist()
 def get_tool_schema(tool_name):
-	"""
-	Get the input schema for a specific tool
+	from mcp_ui.ai.tools import get_tool_schemas
 
-	Args:
-		tool_name: Name of the tool
+	for schema in get_tool_schemas():
+		function = schema.get("function", {})
+		if function.get("name") == tool_name:
+			return {"success": True, "schema": function.get("parameters"), "tool": tool_name}
 
-	Returns:
-		JSON schema for tool inputs
-	"""
-	# Define schemas for each tool
-	schemas = {
-		"create_document": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name (e.g., 'Customer')"},
-				"data": {"type": "object", "description": "Field values as key-value pairs"},
-			},
-			"required": ["doctype", "data"],
-		},
-		"update_document": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"name": {"type": "string", "description": "Document ID"},
-				"data": {"type": "object", "description": "Fields to update"},
-			},
-			"required": ["doctype", "name", "data"],
-		},
-		"delete_document": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"name": {"type": "string", "description": "Document ID"},
-			},
-			"required": ["doctype", "name"],
-		},
-		"get_document": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"name": {"type": "string", "description": "Document ID"},
-			},
-			"required": ["doctype", "name"],
-		},
-		"get_list": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"filters": {"type": "object", "description": "Filter conditions"},
-				"fields": {"type": "array", "items": {"type": "string"}, "description": "Fields to fetch"},
-				"limit": {"type": "integer", "default": 20, "description": "Max records"},
-			},
-			"required": ["doctype"],
-		},
-		"search_documents": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"search_text": {"type": "string", "description": "Text to search"},
-				"limit": {"type": "integer", "default": 20, "description": "Max results"},
-			},
-			"required": ["doctype", "search_text"],
-		},
-		"execute_report": {
-			"type": "object",
-			"properties": {
-				"report_name": {"type": "string", "description": "Report name"},
-				"filters": {"type": "object", "description": "Report filters"},
-			},
-			"required": ["report_name"],
-		},
-		"bulk_update": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"filters": {"type": "object", "description": "Filter to select documents"},
-				"update_data": {"type": "object", "description": "Fields to update"},
-			},
-			"required": ["doctype", "filters", "update_data"],
-		},
-		"export_data": {
-			"type": "object",
-			"properties": {
-				"doctype": {"type": "string", "description": "DocType name"},
-				"filters": {"type": "object", "description": "Filter conditions"},
-				"fields": {"type": "array", "items": {"type": "string"}},
-				"limit": {"type": "integer", "default": 100},
-			},
-			"required": ["doctype"],
-		},
-		"get_dashboard_data": {
-			"type": "object",
-			"properties": {"doctype": {"type": "string", "description": "DocType name"}},
-			"required": ["doctype"],
-		},
-	}
+	extra = next((entry for entry in get_action_catalog() if entry["name"] == tool_name), None)
+	if extra:
+		return {
+			"success": True,
+			"schema": {"type": "object", "properties": {}},
+			"tool": tool_name,
+			"note": "Schema is dynamic for non-AI action endpoints.",
+		}
 
-	schema = schemas.get(tool_name)
-
-	if not schema:
-		frappe.throw(f"Schema not found for tool: {tool_name}")
-
-	return {"success": True, "tool": tool_name, "schema": schema}
+	frappe.throw(f"Tool '{tool_name}' not found")
 

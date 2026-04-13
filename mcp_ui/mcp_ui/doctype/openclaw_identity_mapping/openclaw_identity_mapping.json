@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "creation": "2026-04-12 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "channel",
+  "external_username",
+  "frappe_user",
+  "site",
+  "allowed_chat_id",
+  "allowed_thread_id",
+  "enabled",
+  "external_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "channel",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Channel",
+   "options": "telegram\nwebchat\nwhatsapp\ndiscord\nslack\nother",
+   "reqd": 1
+  },
+  {
+   "fieldname": "external_id",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "External ID",
+   "description": "Legacy provider sender ID fallback. Username-based federation is preferred."
+  },
+  {
+   "fieldname": "external_username",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "External Username",
+   "description": "Optional provider handle such as Telegram username."
+  },
+  {
+   "fieldname": "frappe_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Frappe User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Site",
+   "description": "Optional site restriction. Leave blank to use the current site."
+  },
+  {
+   "fieldname": "allowed_chat_id",
+   "fieldtype": "Data",
+   "label": "Allowed Chat ID"
+  },
+  {
+   "fieldname": "allowed_thread_id",
+   "fieldtype": "Data",
+   "label": "Allowed Thread ID"
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-04-12 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mcp Ui",
+ "name": "OpenClaw Identity Mapping",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -32,10 +32,23 @@
   "openclaw_enabled",
   "telegram_bot_token",
   "column_break_openclaw",
+  "browser_enabled",
+  "browser_headless",
+  "browser_default_profile",
+  "browser_executable_path",
+  "browser_status",
   "openclaw_status",
   "openclaw_config_path",
   "telegram_user_mapping_section",
   "telegram_user_mappings",
+  "identity_mapping_section",
+  "identity_mappings",
+  "runtime_status_section",
+  "openclaw_runtime_root",
+  "openclaw_manifest_hash",
+  "openclaw_last_manifest_refresh",
+  "openclaw_last_gateway_start",
+  "openclaw_last_gateway_error",
   "section_break_features",
   "enable_bulk_operations",
   "enable_keyboard_shortcuts",
@@ -225,6 +238,41 @@
    "fieldtype": "Column Break"
   },
   {
+   "default": "1",
+   "depends_on": "openclaw_enabled",
+   "fieldname": "browser_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Browser / Playwright"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.openclaw_enabled && doc.browser_enabled",
+   "fieldname": "browser_headless",
+   "fieldtype": "Check",
+   "label": "Run Browser Headless"
+  },
+  {
+   "default": "openclaw",
+   "depends_on": "eval:doc.openclaw_enabled && doc.browser_enabled",
+   "fieldname": "browser_default_profile",
+   "fieldtype": "Select",
+   "label": "Browser Default Profile",
+   "options": "openclaw\nuser"
+  },
+  {
+   "depends_on": "eval:doc.openclaw_enabled && doc.browser_enabled",
+   "fieldname": "browser_executable_path",
+   "fieldtype": "Data",
+   "label": "Browser Executable Path",
+   "description": "Optional Chromium/Chrome/Brave executable override for the OpenClaw browser runtime."
+  },
+  {
+   "fieldname": "browser_status",
+   "fieldtype": "Data",
+   "label": "Browser Status",
+   "read_only": 1
+  },
+  {
    "fieldname": "openclaw_status",
    "fieldtype": "Data",
    "label": "OpenClaw Status",
@@ -248,6 +296,55 @@
    "fieldtype": "Table",
    "label": "User Mappings",
    "options": "Telegram User Mapping"
+  },
+  {
+   "fieldname": "identity_mapping_section",
+   "fieldtype": "Section Break",
+   "label": "Federated Identity Mapping",
+   "description": "Generic provider to Frappe user mappings used by OpenClaw sessions.",
+   "depends_on": "openclaw_enabled"
+  },
+  {
+   "fieldname": "identity_mappings",
+   "fieldtype": "Table",
+   "label": "Identity Mappings",
+   "options": "OpenClaw Identity Mapping"
+  },
+  {
+   "fieldname": "runtime_status_section",
+   "fieldtype": "Section Break",
+   "label": "Runtime State",
+   "depends_on": "openclaw_enabled"
+  },
+  {
+   "fieldname": "openclaw_runtime_root",
+   "fieldtype": "Data",
+   "label": "Runtime Root",
+   "read_only": 1
+  },
+  {
+   "fieldname": "openclaw_manifest_hash",
+   "fieldtype": "Data",
+   "label": "Manifest Hash",
+   "read_only": 1
+  },
+  {
+   "fieldname": "openclaw_last_manifest_refresh",
+   "fieldtype": "Datetime",
+   "label": "Last Manifest Refresh",
+   "read_only": 1
+  },
+  {
+   "fieldname": "openclaw_last_gateway_start",
+   "fieldtype": "Datetime",
+   "label": "Last Gateway Start",
+   "read_only": 1
+  },
+  {
+   "fieldname": "openclaw_last_gateway_error",
+   "fieldtype": "Small Text",
+   "label": "Last Gateway Error",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_features",
@@ -354,4 +451,3 @@
  "sort_order": "DESC",
  "states": []
 }
-

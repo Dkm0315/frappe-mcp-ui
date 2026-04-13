@@ -36,15 +36,19 @@ def init_frappe():
 	"""Initialize Frappe framework for standalone execution."""
 	bench_path = os.environ.get("FRAPPE_BENCH", "")
 	site = os.environ.get("FRAPPE_SITE", "site1.local")
+	sites_path = os.path.join(bench_path, "sites") if bench_path else None
 
 	if bench_path:
 		sys.path.insert(0, os.path.join(bench_path, "apps", "frappe"))
-		os.chdir(bench_path)
+		if sites_path and os.path.isdir(sites_path):
+			os.chdir(sites_path)
+		else:
+			os.chdir(bench_path)
 
 	import frappe
-	frappe.init(site=site, sites_path=os.path.join(bench_path, "sites") if bench_path else None)
+	frappe.init(site=site, sites_path=sites_path)
 	frappe.connect()
-	frappe.set_user(os.environ.get("FRAPPE_USER", "Administrator"))
+	frappe.set_user(os.environ.get("FRAPPE_BOOT_USER", "Administrator"))
 	return frappe
 
 
@@ -413,12 +417,139 @@ def create_server(frappe_module) -> Server:
 
 	# Import the tool functions
 	from mcp_ui.ai.tools import get_tool_schemas, get_tool_map
+	from mcp_ui.openclaw.federation import (
+		execute_as_mapped_user,
+		get_action_catalog_payload,
+		get_session_mode_payload,
+		plan_request_with_context_payload,
+		resolve_identity_record,
+		retrieve_site_context_payload,
+		set_session_mode_payload,
+	)
+	from mcp_ui.openclaw.site_context import (
+		get_change_summary,
+		get_site_manifest,
+		refresh_site_context,
+	)
 
 	tool_map = get_tool_map()
 	tool_schemas = get_tool_schemas()
 
-	# No extra tools — all 29 tools are now in ai/tools.py
-	extra_tools = []
+	extra_tools = [
+		Tool(
+			name="resolve_identity",
+			description="Resolve an external provider identity to a mapped Frappe user for the current site.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"channel": {"type": "string"},
+					"external_id": {"type": "string"},
+					"external_username": {"type": "string"},
+					"site_hint": {"type": "string"},
+					"chat_id": {"type": "string"},
+					"thread_id": {"type": "string"},
+				},
+				"required": ["channel"],
+			},
+		),
+		Tool(
+			name="get_session_mode",
+			description="Return the current session mode for this conversation.",
+			inputSchema={"type": "object", "properties": {"session_context": {"type": "object"}}},
+		),
+		Tool(
+			name="set_session_mode",
+			description="Set the current session mode to normal or admin.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"session_context": {"type": "object"},
+					"mode": {"type": "string"},
+				},
+				"required": ["session_context", "mode"],
+			},
+		),
+		Tool(
+			name="get_site_manifest",
+			description="Return the generated site manifest with app, workflow, customization, UI, and NextAI context.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"site": {"type": "string"},
+					"refresh": {"type": "boolean"},
+				},
+			},
+		),
+		Tool(
+			name="refresh_site_context",
+			description="Refresh the cached site manifest and regenerate site skills.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"site": {"type": "string"},
+					"reason": {"type": "string"},
+				},
+			},
+		),
+		Tool(
+			name="retrieve_site_context",
+			description="Return typed retrieval results across doctypes, reports, workflows, UI surfaces, hooks, scripts, and actions.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"site": {"type": "string"},
+					"query": {"type": "string"},
+					"limit": {"type": "number"},
+				},
+				"required": ["query"],
+			},
+		),
+		Tool(
+			name="plan_request",
+			description="Plan a vague or multi-step request into typed retrieval, candidate actions, missing inputs, and confirmation requirements.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"session_context": {"type": "object"},
+					"request": {"type": "string"},
+					"draft": {"type": "object"},
+				},
+				"required": ["session_context", "request"],
+			},
+		),
+		Tool(
+			name="get_change_summary",
+			description="Summarize structural app and customization changes since the last manifest refresh.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"site": {"type": "string"},
+					"since_hash_or_timestamp": {"type": "string"},
+				},
+			},
+		),
+		Tool(
+			name="get_action_catalog",
+			description="Return the federated action catalog for documents, workflows, scripts, customizations, and discovery.",
+			inputSchema={"type": "object", "properties": {}},
+		),
+		Tool(
+			name="execute_as_user",
+			description="Execute any registered Frappe/OpenClaw action as the mapped ERP user resolved from provider identity.",
+			inputSchema={
+				"type": "object",
+				"properties": {
+					"session_context": {"type": "object"},
+					"action": {"type": "string"},
+					"args": {"type": "object"},
+					"validate_only": {"type": "boolean"},
+					"confirmed": {"type": "boolean"},
+					"confirmation_note": {"type": "string"},
+				},
+				"required": ["session_context", "action"],
+			},
+		),
+	]
 
 	@server.list_tools()
 	async def list_tools() -> list[Tool]:
@@ -438,16 +569,72 @@ def create_server(frappe_module) -> Server:
 	async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 		"""Execute a Frappe tool."""
 		try:
+			arguments = arguments or {}
+			if name == "resolve_identity":
+				result = resolve_identity_record(**arguments)
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "get_session_mode":
+				result = get_session_mode_payload(arguments.get("session_context") or {})
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "set_session_mode":
+				result = set_session_mode_payload(arguments.get("session_context") or {}, mode=arguments.get("mode", "normal"))
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "get_site_manifest":
+				result = get_site_manifest(site=arguments.get("site"), refresh=bool(arguments.get("refresh")))
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "retrieve_site_context":
+				result = retrieve_site_context_payload(
+					site=arguments.get("site"),
+					query=arguments.get("query", ""),
+					limit=arguments.get("limit") or 5,
+				)
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "plan_request":
+				result = plan_request_with_context_payload(
+					session_context=arguments.get("session_context") or {},
+					request=arguments.get("request", ""),
+					draft=arguments.get("draft") or {},
+				)
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "refresh_site_context":
+				result = refresh_site_context(site=arguments.get("site"), reason=arguments.get("reason", "mcp_refresh"))
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "get_change_summary":
+				result = get_change_summary(
+					site=arguments.get("site"),
+					since_hash_or_timestamp=arguments.get("since_hash_or_timestamp"),
+				)
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "get_action_catalog":
+				result = get_action_catalog_payload()
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+			if name == "execute_as_user":
+				result = execute_as_mapped_user(
+					session_context=arguments.get("session_context") or {},
+					action=arguments.get("action"),
+					args=arguments.get("args") or {},
+					validate_only=bool(arguments.get("validate_only")),
+					confirmed=bool(arguments.get("confirmed")),
+					confirmation_note=arguments.get("confirmation_note", ""),
+				)
+				return [TextContent(type="text", text=json.dumps(result, default=str, indent=2))]
+
 			# Look up the tool function
 			fn = tool_map.get(name)
 			if not fn:
 				return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
-			# Execute with proper user context
-			user = os.environ.get("FRAPPE_USER", "Administrator")
-			frappe.set_user(user)
-
-			result = fn(**arguments)
+			session_context = (arguments or {}).pop("session_context", None) or (arguments or {}).pop("_session_context", None)
+			if session_context:
+				result = execute_as_mapped_user(
+					session_context=session_context,
+					action=name,
+					args=arguments,
+				)
+			else:
+				user = os.environ.get("FRAPPE_USER", os.environ.get("FRAPPE_BOOT_USER", "Administrator"))
+				frappe.set_user(user)
+				result = fn(**arguments)
 
 			# Ensure result is JSON serializable
 			result_str = json.dumps(result, default=str, indent=2)
