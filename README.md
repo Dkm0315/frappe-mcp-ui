@@ -82,6 +82,12 @@ mcp_ui/
     └── components/chat/   # Rich result renderers (DataTable, ProcessChain, etc.)
 ```
 
+## Implementation Docs
+
+For the current bench-colocated OpenClaw runtime, federation, planner, gateway, and extension points, see:
+
+- `docs/OpenClaw_Integration_Runtime.md`
+
 ## Requirements
 
 - Frappe Framework v15+

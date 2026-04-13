@@ -1,10 +1,12 @@
 """
 LLM Provider Configuration
 Reads AI config from MCP Settings and returns litellm-compatible model strings.
-Supports: Ollama, OpenAI, Anthropic, Google, Custom
+Supports: Ollama, OpenAI, Anthropic, Google, Custom.
 """
+
 import frappe
-from mcp_ui.utils.app_checker import get_openai_api_key, get_anthropic_api_key
+
+from mcp_ui.utils.app_checker import get_anthropic_api_key, get_openai_api_key
 
 
 def get_provider_config() -> dict:
@@ -20,6 +22,7 @@ def get_provider_config() -> dict:
 		return {"enabled": False}
 
 	provider = settings.ai_provider or "OpenAI"
+	configured_provider = provider
 	model = None
 	api_key = None
 	api_base = None
@@ -42,25 +45,59 @@ def get_provider_config() -> dict:
 		model = model_name
 
 	elif provider == "Google":
-		api_key = settings.ai_chat_api_key
+		api_key = _get_settings_secret(settings, "ai_chat_api_key")
 		model_name = settings.ai_chat_model or "gemini-2.0-flash"
 		model = f"gemini/{model_name}"
 
 	else:
 		# Custom provider — use ai_chat_model and ai_chat_base_url directly
 		model = settings.ai_chat_model
-		api_key = settings.ai_chat_api_key
+		api_key = _get_settings_secret(settings, "ai_chat_api_key")
 		api_base = settings.ai_chat_base_url
+
+	if _should_fallback_to_ollama(provider, api_key):
+		provider = "Ollama"
+		api_key = "ollama-local"
+		api_base = settings.ai_chat_base_url or "http://localhost:11434"
+		model_name = settings.ai_chat_model or "qwen3:8b"
+		model = f"ollama_chat/{model_name}"
 
 	max_steps = settings.ai_chat_max_steps or 25
 
 	return {
 		"enabled": True,
+		"provider": provider,
+		"configured_provider": configured_provider,
 		"model": model,
 		"api_key": api_key,
 		"api_base": api_base,
 		"max_steps": int(max_steps),
+		"using_fallback": provider == "Ollama" and configured_provider != "Ollama",
 	}
+
+
+def _get_settings_secret(settings, fieldname: str) -> str | None:
+	try:
+		value = settings.get_password(fieldname)
+		if value and value.strip():
+			return value
+	except Exception:
+		pass
+
+	value = settings.get(fieldname)
+	if isinstance(value, str):
+		value = value.strip()
+		if value and set(value) != {"*"}:
+			return value
+	return None
+
+
+def _should_fallback_to_ollama(provider: str, api_key: str | None) -> bool:
+	if provider == "Ollama":
+		return False
+	if api_key:
+		return False
+	return provider in {"OpenAI", "Anthropic", "Google", "Custom"} or bool(provider)
 
 
 def get_allowed_doctypes() -> dict:

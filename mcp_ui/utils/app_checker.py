@@ -1,9 +1,10 @@
 """
 App Detection and Configuration Utilities
-Handles optional NextAI integration and OpenAI key fallback
+Handles optional NextAI integration and provider secret fallback.
 """
+from typing import Any, Dict, List, Optional
+
 import frappe
-from typing import Optional, List, Dict, Any
 
 
 def is_nextai_installed() -> bool:
@@ -32,16 +33,16 @@ def get_openai_api_key() -> Optional[str]:
 	# Try ChatNext Settings first if nextai is installed
 	if is_nextai_installed():
 		try:
-			key = frappe.db.get_single_value('ChatNext Settings', 'openai_api_key')
+			key = _get_singleton_secret("ChatNext Settings", "openai_api_key")
 			if key and key.strip():
 				return key
 		except Exception:
 			# ChatNext Settings might not exist or field might not be accessible
 			pass
-	
+
 	# Fallback to MCP Settings
 	try:
-		key = frappe.db.get_single_value('MCP Settings', 'openai_api_key')
+		key = _get_singleton_secret("MCP Settings", "openai_api_key")
 		if key and key.strip():
 			return key
 	except Exception:
@@ -60,12 +61,38 @@ def get_anthropic_api_key() -> Optional[str]:
 		Optional[str]: Anthropic API key or None
 	"""
 	try:
-		key = frappe.db.get_single_value('MCP Settings', 'anthropic_api_key')
+		key = _get_singleton_secret("MCP Settings", "anthropic_api_key")
 		if key and key.strip():
 			return key
 	except Exception:
 		pass
 	
+	return None
+
+
+def _get_singleton_secret(doctype: str, fieldname: str) -> Optional[str]:
+	"""Read singleton secret fields correctly, including Password fields."""
+	try:
+		doc = frappe.get_single(doctype)
+	except Exception:
+		return None
+
+	try:
+		value = doc.get_password(fieldname)
+		if value and value.strip():
+			return value
+	except Exception:
+		pass
+
+	try:
+		value = doc.get(fieldname)
+		if isinstance(value, str):
+			value = value.strip()
+			if value and set(value) != {"*"}:
+				return value
+	except Exception:
+		pass
+
 	return None
 
 
@@ -97,10 +124,15 @@ def get_available_workflows() -> List[Dict[str, Any]]:
 		return []
 	
 	try:
+		meta = frappe.get_meta("Funnel Published")
+		fields = ["name", "funnel", "modified"]
+		if meta.has_field("funnel_description"):
+			fields.append("funnel_description")
+
 		workflows = frappe.get_all(
 			"Funnel Published",
 			filters={"published": 1},
-			fields=["name", "funnel", "funnel_description", "modified"],
+			fields=fields,
 			order_by="modified desc"
 		)
 		return workflows
@@ -173,4 +205,3 @@ def get_system_health():
 		"apps": frappe.get_installed_apps(),
 		"mcp_ui_version": frappe.get_attr("mcp_ui.__version__") if hasattr(frappe.get_module("mcp_ui"), "__version__") else "1.0.0"
 	}
-

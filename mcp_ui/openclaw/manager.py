@@ -1,56 +1,60 @@
 """
 OpenClaw Gateway Process Manager
 
-Keeps the OpenClaw gateway running via Frappe scheduler.
-Works on Frappe Cloud, self-hosted, and local dev environments.
-
-The scheduler calls `ensure_gateway_running` every minute.
-If the gateway is not running and OpenClaw is enabled in MCP Settings,
-it starts the process automatically.
+Runs OpenClaw in a bench-local home/workspace so hosted/global user state is
+not mixed across benches or sites. The scheduler acts as a watchdog.
 """
+from __future__ import annotations
+
 import os
 import signal
 import subprocess
+from datetime import datetime, timezone
+from pathlib import Path
 
 import frappe
 
+from mcp_ui.openclaw.runtime import ensure_runtime_dirs, read_json, write_json, write_runtime_state
+from mcp_ui.openclaw.site_context import refresh_site_context
 
-def _get_paths():
-	"""Get all relevant paths for OpenClaw."""
-	bench_path = frappe.utils.get_bench_path()
+
+def _utcnow() -> str:
+	return datetime.now(timezone.utc).isoformat()
+
+
+def _get_paths() -> dict[str, str]:
+	paths = ensure_runtime_dirs(frappe.local.site)
+	bench_path = paths["bench_path"]
 	app_path = os.path.join(bench_path, "apps", "mcp_ui")
-	openclaw_runtime = os.path.join(app_path, "openclaw_runtime")
-	openclaw_bin = os.path.join(openclaw_runtime, "node_modules", ".bin", "openclaw")
-	pid_file = os.path.join(bench_path, "config", "openclaw.pid")
-	log_file = os.path.join(bench_path, "logs", "openclaw.log")
-	config_dir = os.path.expanduser("~/.openclaw")
-	config_file = os.path.join(config_dir, "openclaw.json")
+	runtime_dir = os.path.join(app_path, "openclaw_runtime")
+	paths.update(
+		{
+			"app_path": app_path,
+			"openclaw_runtime": runtime_dir,
+			"openclaw_bin": os.path.join(runtime_dir, "node_modules", ".bin", "openclaw"),
+			"openclaw_entry": os.path.join(runtime_dir, "node_modules", "openclaw", "openclaw.mjs"),
+		}
+	)
+	return paths
 
-	return {
-		"bench_path": bench_path,
-		"app_path": app_path,
-		"openclaw_runtime": openclaw_runtime,
-		"openclaw_bin": openclaw_bin,
-		"pid_file": pid_file,
-		"log_file": log_file,
-		"config_dir": config_dir,
-		"config_file": config_file,
-	}
+
+def _read_pid(pid_file: str) -> int | None:
+	try:
+		with open(pid_file) as handle:
+			return int(handle.read().strip())
+	except Exception:
+		return None
 
 
 def _is_running(pid_file: str) -> bool:
-	"""Check if the gateway process is still alive."""
-	if not os.path.exists(pid_file):
+	pid = _read_pid(pid_file)
+	if not pid:
 		return False
 
 	try:
-		with open(pid_file) as f:
-			pid = int(f.read().strip())
-		# Signal 0 checks if process exists without killing it
 		os.kill(pid, 0)
 		return True
-	except (ValueError, ProcessLookupError, PermissionError, OSError):
-		# PID file exists but process is dead — clean up
+	except (ProcessLookupError, PermissionError, OSError):
 		try:
 			os.unlink(pid_file)
 		except OSError:
@@ -59,99 +63,152 @@ def _is_running(pid_file: str) -> bool:
 
 
 def _is_openclaw_enabled() -> bool:
-	"""Check if OpenClaw is enabled in MCP Settings."""
 	try:
 		return bool(frappe.db.get_single_value("MCP Settings", "openclaw_enabled"))
 	except Exception:
 		return False
 
 
+def _discover_node_binary() -> str | None:
+	settings_path = frappe.conf.get("openclaw_node_path")
+	candidates = [settings_path, os.environ.get("OPENCLAW_NODE_PATH"), os.environ.get("NVM_BIN") and os.path.join(os.environ["NVM_BIN"], "node")]
+
+	home = os.path.expanduser("~")
+	candidates.extend(
+		[
+			os.path.join(home, ".nvm", "versions", "node", "v24.13.0", "bin", "node"),
+			os.path.join(home, ".nvm", "versions", "node", "v22.22.0", "bin", "node"),
+			"/opt/homebrew/bin/node",
+			"/usr/local/bin/node",
+			"node",
+		]
+	)
+
+	for candidate in candidates:
+		if not candidate:
+			continue
+		try:
+			result = subprocess.run(
+				[candidate, "--version"],
+				check=False,
+				capture_output=True,
+				text=True,
+				timeout=5,
+			)
+			if result.returncode != 0:
+				continue
+			version = result.stdout.strip().lstrip("v")
+			major = int(version.split(".", 1)[0])
+			if major >= 22:
+				return candidate
+		except Exception:
+			continue
+
+	return None
+
+
 def _is_openclaw_installed(paths: dict) -> bool:
-	"""Check if openclaw binary exists."""
-	return os.path.isfile(paths["openclaw_bin"])
+	return os.path.isfile(paths["openclaw_entry"])
 
 
 def _has_config(paths: dict) -> bool:
-	"""Check if openclaw.json exists."""
 	return os.path.isfile(paths["config_file"])
 
 
-def install_openclaw():
-	"""Install openclaw and openclaw-mcp-adapter npm packages.
+def _sessions_dir(paths: dict) -> Path:
+	return Path(paths["home"]) / ".openclaw" / "agents" / "main" / "sessions"
 
-	Called during after_install and can be called manually via bench command.
-	"""
+
+def _pid_alive(pid: int | None) -> bool:
+	if not pid:
+		return False
+	try:
+		os.kill(pid, 0)
+		return True
+	except (ProcessLookupError, PermissionError, OSError):
+		return False
+
+
+def _sanitize_session_store(paths: dict) -> dict[str, int]:
+	sessions_dir = _sessions_dir(paths)
+	store_path = sessions_dir / "sessions.json"
+	config = read_json(paths["config_file"], {}) or {}
+	disable_native_skills = config.get("commands", {}).get("nativeSkills") is False
+	stats = {"snapshots_cleared": 0, "locks_removed": 0}
+
+	store = read_json(str(store_path), None)
+	if isinstance(store, dict):
+		changed = False
+		for entry in store.values():
+			if not isinstance(entry, dict):
+				continue
+			if disable_native_skills and entry.pop("skillsSnapshot", None) is not None:
+				stats["snapshots_cleared"] += 1
+				changed = True
+		if changed:
+			write_json(str(store_path), store)
+
+	for lock_file in sessions_dir.glob("*.jsonl.lock"):
+		session_file = Path(str(lock_file)[:-5])
+		lock_payload = read_json(str(lock_file), {}) or {}
+		lock_pid = None
+		try:
+			lock_pid = int(lock_payload.get("pid"))
+		except Exception:
+			lock_pid = None
+		if session_file.exists() and _pid_alive(lock_pid):
+			continue
+		try:
+			lock_file.unlink()
+			stats["locks_removed"] += 1
+		except OSError:
+			pass
+
+	return stats
+
+
+def install_openclaw():
 	paths = _get_paths()
 	runtime_dir = paths["openclaw_runtime"]
 	os.makedirs(runtime_dir, exist_ok=True)
 
-	# Create package.json if it doesn't exist
-	pkg_json = os.path.join(runtime_dir, "package.json")
-	if not os.path.exists(pkg_json):
-		import json
-		with open(pkg_json, "w") as f:
-			json.dump({
-				"name": "mcp-ui-openclaw-runtime",
-				"private": True,
-				"dependencies": {
-					"openclaw": "latest",
-					"openclaw-mcp-adapter": "latest",
-				},
-			}, f, indent=2)
+	node_bin = _discover_node_binary()
+	if not node_bin:
+		return {"success": False, "error": "Node 22+ not found. Configure OPENCLAW_NODE_PATH or install Node 22/24."}
 
-	# Run npm install
+	npm_bin = os.path.join(os.path.dirname(node_bin), "npm")
+	if not os.path.exists(npm_bin):
+		npm_bin = "npm"
+
 	try:
 		result = subprocess.run(
-			["npm", "install", "--production"],
+			[npm_bin, "install", "--production"],
 			cwd=runtime_dir,
 			capture_output=True,
 			text=True,
-			timeout=120,
+			timeout=180,
 		)
 		if result.returncode == 0:
 			frappe.logger("openclaw").info("OpenClaw npm packages installed successfully")
-			return {"success": True, "output": result.stdout}
-		else:
-			frappe.logger("openclaw").error(f"npm install failed: {result.stderr}")
-			return {"success": False, "error": result.stderr}
+			return {"success": True, "output": result.stdout, "node": node_bin}
+		frappe.logger("openclaw").error(f"npm install failed: {result.stderr}")
+		return {"success": False, "error": result.stderr, "node": node_bin}
 	except FileNotFoundError:
 		return {"success": False, "error": "npm not found. Install Node.js first."}
 	except subprocess.TimeoutExpired:
-		return {"success": False, "error": "npm install timed out after 120s"}
+		return {"success": False, "error": "npm install timed out after 180s"}
 
 
-def start_gateway():
-	"""Start the OpenClaw gateway as a background process.
-
-	Returns the PID of the started process, or None if it failed.
-	"""
-	paths = _get_paths()
-
-	if not _is_openclaw_installed(paths):
-		frappe.logger("openclaw").warning("OpenClaw not installed. Run install_openclaw() first.")
-		return None
-
-	if _is_running(paths["pid_file"]):
-		with open(paths["pid_file"]) as f:
-			return int(f.read().strip())
-
-	if not _has_config(paths):
-		# Auto-generate config
-		try:
-			from mcp_ui.api.openclaw import generate_config
-			generate_config()
-		except Exception as e:
-			frappe.logger("openclaw").error(f"Failed to generate config: {e}")
-			return None
-
-	# Build environment — pass through LLM API keys
+def _build_gateway_env(settings, paths: dict) -> dict[str, str]:
 	env = os.environ.copy()
-	settings = frappe.get_single("MCP Settings")
-	provider = settings.ai_provider or "OpenAI"
+	env["HOME"] = paths["home"]
+	env["FRAPPE_SITE"] = paths["site"]
+	env["FRAPPE_BENCH"] = paths["bench_path"]
 
-	# Set the API key env var for the LLM provider
 	from mcp_ui.ai.providers import get_provider_config
+
 	provider_config = get_provider_config()
+	provider = provider_config.get("provider") or settings.ai_provider or "OpenAI"
 	api_key = provider_config.get("api_key", "")
 
 	if provider == "Ollama":
@@ -163,111 +220,149 @@ def start_gateway():
 	elif provider == "Google" and api_key:
 		env["GEMINI_API_KEY"] = api_key
 
-	# Ensure logs directory exists
-	os.makedirs(os.path.dirname(paths["log_file"]), exist_ok=True)
+	return env
 
-	# Start gateway as detached subprocess
+
+def start_gateway():
+	paths = _get_paths()
+	settings = frappe.get_single("MCP Settings")
+
+	if not _is_openclaw_installed(paths):
+		frappe.logger("openclaw").warning("OpenClaw not installed. Run install_openclaw() first.")
+		return None
+
+	if _is_running(paths["pid_file"]):
+		return _read_pid(paths["pid_file"])
+
+	if not _has_config(paths):
+		try:
+			from mcp_ui.api.openclaw import generate_config
+
+			generate_config()
+		except Exception as exc:
+			frappe.logger("openclaw").error(f"Failed to generate config: {exc}")
+			write_runtime_state(error=str(exc), last_start_attempt=_utcnow())
+			try:
+				settings.db_set("openclaw_last_gateway_error", str(exc), update_modified=False)
+			except Exception:
+				pass
+			return None
+
+	refresh_site_context(reason="gateway_start")
+	node_bin = _discover_node_binary()
+	if not node_bin:
+		write_runtime_state(error="Node 22+ not available", last_start_attempt=_utcnow())
+		try:
+			settings.db_set("openclaw_last_gateway_error", "Node 22+ not available", update_modified=False)
+		except Exception:
+			pass
+		return None
+
+	sanitize_stats = _sanitize_session_store(paths)
+	env = _build_gateway_env(settings, paths)
+	os.makedirs(os.path.dirname(paths["log_file"]), exist_ok=True)
 	log_fd = open(paths["log_file"], "a")
+
 	try:
 		process = subprocess.Popen(
-			[paths["openclaw_bin"], "gateway"],
-			cwd=os.path.expanduser("~"),
+			[node_bin, paths["openclaw_entry"], "gateway"],
+			cwd=paths["workspace"],
 			stdout=log_fd,
 			stderr=log_fd,
 			env=env,
-			start_new_session=True,  # Detach from parent process
+			start_new_session=True,
 		)
-	except Exception as e:
+	except Exception as exc:
 		log_fd.close()
-		frappe.logger("openclaw").error(f"Failed to start gateway: {e}")
+		frappe.logger("openclaw").error(f"Failed to start gateway: {exc}")
+		write_runtime_state(error=str(exc), last_start_attempt=_utcnow(), node=node_bin)
+		try:
+			settings.db_set("openclaw_last_gateway_error", str(exc), update_modified=False)
+		except Exception:
+			pass
 		return None
 
-	# Write PID file
-	os.makedirs(os.path.dirname(paths["pid_file"]), exist_ok=True)
-	with open(paths["pid_file"], "w") as f:
-		f.write(str(process.pid))
+	with open(paths["pid_file"], "w") as handle:
+		handle.write(str(process.pid))
 
+	state = write_runtime_state(
+		last_started_at=_utcnow(),
+		last_start_attempt=_utcnow(),
+		last_pid=process.pid,
+		node=node_bin,
+		error="",
+	)
+	write_json(paths["heartbeat_file"], {"pid": process.pid, "started_at": state["last_started_at"]})
+	try:
+		settings.db_set("openclaw_last_gateway_start", state["last_started_at"], update_modified=False)
+		settings.db_set("openclaw_last_gateway_error", "", update_modified=False)
+	except Exception:
+		pass
+
+	if sanitize_stats["snapshots_cleared"] or sanitize_stats["locks_removed"]:
+		frappe.logger("openclaw").info(
+			"OpenClaw session store sanitized before startup "
+			f"(snapshots_cleared={sanitize_stats['snapshots_cleared']}, locks_removed={sanitize_stats['locks_removed']})"
+		)
 	frappe.logger("openclaw").info(f"OpenClaw gateway started (PID {process.pid})")
 	return process.pid
 
 
 def stop_gateway():
-	"""Stop the OpenClaw gateway process."""
 	paths = _get_paths()
-	pid_file = paths["pid_file"]
-
-	if not os.path.exists(pid_file):
+	pid = _read_pid(paths["pid_file"])
+	if not pid:
 		return False
 
 	try:
-		with open(pid_file) as f:
-			pid = int(f.read().strip())
-
-		# Send SIGTERM for graceful shutdown
 		os.kill(pid, signal.SIGTERM)
-		frappe.logger("openclaw").info(f"OpenClaw gateway stopped (PID {pid})")
-	except (ValueError, ProcessLookupError, PermissionError):
+	except (ProcessLookupError, PermissionError, OSError):
 		pass
 
 	try:
-		os.unlink(pid_file)
+		os.unlink(paths["pid_file"])
 	except OSError:
 		pass
 
+	write_runtime_state(last_stopped_at=_utcnow())
 	return True
 
 
 def ensure_gateway_running():
-	"""Scheduler job: ensure the OpenClaw gateway is running.
-
-	Called every minute by the Frappe scheduler. If OpenClaw is enabled
-	in MCP Settings but the process is not running, it starts it.
-	"""
 	if not _is_openclaw_enabled():
 		return
 
 	paths = _get_paths()
-
 	if _is_running(paths["pid_file"]):
-		return  # Already running, nothing to do
+		write_runtime_state(last_seen_alive_at=_utcnow())
+		return
 
 	if not _is_openclaw_installed(paths):
-		# Try to install on first run
-		frappe.logger("openclaw").info("OpenClaw not installed, attempting install...")
 		result = install_openclaw()
 		if not result.get("success"):
 			frappe.logger("openclaw").error(f"Auto-install failed: {result.get('error')}")
+			write_runtime_state(error=result.get("error"), last_start_attempt=_utcnow())
 			return
 
-	# Start the gateway
 	pid = start_gateway()
 	if pid:
 		frappe.logger("openclaw").info(f"OpenClaw gateway auto-started by scheduler (PID {pid})")
 
 
 def get_status():
-	"""Get current gateway status."""
 	paths = _get_paths()
 	running = _is_running(paths["pid_file"])
-	installed = _is_openclaw_installed(paths)
-	enabled = _is_openclaw_enabled()
-	has_cfg = _has_config(paths)
-
-	pid = None
-	if running:
-		try:
-			with open(paths["pid_file"]) as f:
-				pid = int(f.read().strip())
-		except Exception:
-			pass
+	state = read_json(paths["state_file"], {}) or {}
 
 	return {
-		"enabled": enabled,
-		"installed": installed,
-		"has_config": has_cfg,
+		"enabled": _is_openclaw_enabled(),
+		"installed": _is_openclaw_installed(paths),
+		"configured": _has_config(paths),
 		"running": running,
-		"pid": pid,
-		"openclaw_bin": paths["openclaw_bin"],
+		"pid": _read_pid(paths["pid_file"]) if running else None,
+		"runtime_root": paths["root"],
 		"config_file": paths["config_file"],
+		"workspace": paths["workspace"],
 		"log_file": paths["log_file"],
+		"state": state,
 	}

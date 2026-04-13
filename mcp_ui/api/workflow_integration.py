@@ -7,6 +7,14 @@ import json
 from mcp_ui.utils.app_checker import is_nextai_installed
 
 
+def _published_funnel_fields():
+	meta = frappe.get_meta("Funnel Published")
+	fields = ["name", "funnel", "modified"]
+	if meta.has_field("funnel_description"):
+		fields.append("funnel_description")
+	return fields
+
+
 @frappe.whitelist()
 def get_workflows(category=None):
 	"""
@@ -40,7 +48,7 @@ def get_workflows(category=None):
 		workflows = frappe.get_all(
 			"Funnel Published",
 			filters={"published": 1},
-			fields=["name", "funnel", "funnel_description", "modified"],
+			fields=_published_funnel_fields(),
 			order_by="modified desc"
 		)
 		
@@ -349,7 +357,7 @@ def get_workflow_definition(funnel_name):
 		return {
 			"success": True,
 			"funnel": funnel_name,
-			"description": funnel.funnel_description,
+			"description": getattr(funnel, "funnel_description", "") or getattr(funnel, "description", ""),
 			"nodes": nodes,
 			"node_count": len(nodes)
 		}
@@ -363,3 +371,32 @@ def get_workflow_definition(funnel_name):
 			"node_count": 0
 		}
 
+
+@frappe.whitelist()
+def create_funnel(data=None):
+	"""Create a NextAI Funnel document with live validations."""
+	if not is_nextai_installed():
+		frappe.throw("NextAI not installed")
+
+	if not frappe.db.exists("DocType", "Funnel"):
+		frappe.throw("Funnel DocType not found")
+
+	payload = json.loads(data) if isinstance(data, str) else (data or {})
+	doc = frappe.get_doc({"doctype": "Funnel", **payload})
+	doc.insert()
+	frappe.db.commit()
+	return {"success": True, "name": doc.name, "data": doc.as_dict()}
+
+
+@frappe.whitelist()
+def update_funnel(name, data=None):
+	"""Update an existing NextAI Funnel document with validations."""
+	if not is_nextai_installed():
+		frappe.throw("NextAI not installed")
+
+	payload = json.loads(data) if isinstance(data, str) else (data or {})
+	doc = frappe.get_doc("Funnel", name)
+	doc.update(payload)
+	doc.save()
+	frappe.db.commit()
+	return {"success": True, "name": doc.name, "data": doc.as_dict()}

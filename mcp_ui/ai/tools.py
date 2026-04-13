@@ -22,6 +22,7 @@ def _register(schema: dict):
 	"""Decorator to register a tool function with its schema."""
 
 	def decorator(fn):
+		fn._schema = schema
 		TOOLS.append({"function": fn, "schema": schema})
 		return fn
 
@@ -81,7 +82,7 @@ def get_list(doctype: str, filters: dict = None, fields: list = None, order_by: 
 	_check_permission(doctype, "read")
 
 	limit = min(limit or 20, 500)
-	docs = frappe.get_all(
+	docs = frappe.get_list(
 		doctype,
 		filters=filters or {},
 		fields=fields or ["name"],
@@ -202,7 +203,12 @@ def search_documents(doctype: str, search_text: str, limit: int = 20) -> dict:
 		search_fields = ["name"]
 
 	or_filters = [[doctype, f, "like", f"%{search_text}%"] for f in search_fields]
-	docs = frappe.get_all(doctype, or_filters=or_filters, fields=["name", *search_fields], limit=min(limit, 100))
+	docs = frappe.get_list(
+		doctype,
+		or_filters=or_filters,
+		fields=["name", *search_fields],
+		limit_page_length=min(limit, 100),
+	)
 	return {"success": True, "doctype": doctype, "count": len(docs), "data": docs}
 
 
@@ -393,7 +399,7 @@ def bulk_update(doctype: str, filters: dict, update_data: dict) -> dict:
 	_check_access(doctype, "update")
 	_check_permission(doctype, "write")
 
-	names = frappe.get_all(doctype, filters=filters, pluck="name")
+	names = [row.name for row in frappe.get_list(doctype, filters=filters, fields=["name"], limit_page_length=5000)]
 	updated = []
 	failed = []
 	for name in names:
@@ -425,7 +431,7 @@ def bulk_delete(doctype: str, filters: dict) -> dict:
 	_check_access(doctype, "delete")
 	_check_permission(doctype, "delete")
 
-	names = frappe.get_all(doctype, filters=filters, pluck="name")
+	names = [row.name for row in frappe.get_list(doctype, filters=filters, fields=["name"], limit_page_length=5000)]
 	deleted = []
 	failed = []
 	for name in names:
@@ -615,11 +621,11 @@ def export_to_excel(doctype: str, filters: dict = None, fields: list = None, lim
 	_check_access(doctype, "read")
 	_check_permission(doctype, "read")
 
-	docs = frappe.get_all(
+	docs = frappe.get_list(
 		doctype,
 		filters=filters or {},
 		fields=fields or ["*"],
-		limit=min(limit, 5000),
+		limit_page_length=min(limit, 5000),
 		order_by="modified desc",
 	)
 
@@ -656,7 +662,9 @@ def export_to_excel(doctype: str, filters: dict = None, fields: list = None, lim
 	},
 })
 def run_report(report_name: str, filters: dict = None) -> dict:
-	result = frappe.desk.query_report.run(report_name, filters=filters or {})
+	from frappe.desk.query_report import run as run_query_report
+
+	result = run_query_report(report_name, filters=filters or {})
 	columns = result.get("columns", [])
 	data = result.get("result", [])
 
@@ -693,12 +701,12 @@ def get_dashboard_data(doctype: str) -> dict:
 	_check_permission(doctype, "read")
 
 	total = frappe.db.count(doctype)
-	recent = frappe.get_all(doctype, fields=["name", "modified"], order_by="modified desc", limit=5)
+	recent = frappe.get_list(doctype, fields=["name", "modified"], order_by="modified desc", limit_page_length=5)
 
 	status_breakdown = {}
 	meta = frappe.get_meta(doctype)
 	if meta.has_field("status"):
-		for row in frappe.get_all(doctype, fields=["status", "count(*) as cnt"], group_by="status"):
+		for row in frappe.get_list(doctype, fields=["status", "count(*) as cnt"], group_by="status", limit_page_length=500):
 			status_breakdown[row.status] = row.cnt
 
 	return {
@@ -753,13 +761,13 @@ def analyze_data(doctype: str, fields: list = None, filters: dict = None, group_
 	kwargs = {
 		"filters": filters or {},
 		"fields": fields or ["*"],
-		"limit": min(limit, 2000),
+		"limit_page_length": min(limit, 2000),
 		"order_by": order_by or "modified desc",
 	}
 	if group_by:
 		kwargs["group_by"] = group_by
 
-	data = frappe.get_all(doctype, **kwargs)
+	data = frappe.get_list(doctype, **kwargs)
 
 	return {
 		"success": True,
@@ -879,11 +887,11 @@ def get_pending_approvals() -> dict:
 		# Find documents in those states
 		for state in actionable_states:
 			try:
-				docs = frappe.get_all(
+				docs = frappe.get_list(
 					wf.document_type,
 					filters={"workflow_state": state, "docstatus": ["<", 2]},
 					fields=["name", "workflow_state", "modified", "owner"],
-					limit=20,
+					limit_page_length=20,
 				)
 				for doc in docs:
 					doc["doctype"] = wf.document_type
